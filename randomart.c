@@ -553,7 +553,7 @@ int main()
     arena_da_append(&static_arena, &grammar, branches);
     memset(&branches, 0, sizeof(branches));
 
-    Node *f = gen_rule(grammar, &static_arena, e, 40);
+    Node *f = gen_rule(grammar, &static_arena, e, 30);
     if (!f) {
         fprintf(stderr, "ERROR: the crappy generation process could not terminate\n");
         return 1;
