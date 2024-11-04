@@ -45,23 +45,23 @@
 #define ARENA_BACKEND ARENA_BACKEND_LIBC_MALLOC
 #endif // ARENA_BACKEND
 
-typedef struct Arena_Region Arena_Region;
+typedef struct Region Region;
 
-struct Arena_Region {
-    Arena_Region *next;
+struct Region {
+    Region *next;
     size_t count;
     size_t capacity;
     uintptr_t data[];
 };
 
 typedef struct {
-    Arena_Region *begin, *end;
+    Region *begin, *end;
 } Arena;
 
 #define REGION_DEFAULT_CAPACITY (8*1024)
 
-Arena_Region *new_region(size_t capacity);
-void free_region(Arena_Region *r);
+Region *new_region(size_t capacity);
+void free_region(Region *r);
 
 // TODO: snapshot/rewind capability for the arena
 // - Snapshot should be combination of a->end and a->end->count.
@@ -109,11 +109,11 @@ void arena_free(Arena *a);
 
 // TODO: instead of accepting specific capacity new_region() should accept the size of the object we want to fit into the region
 // It should be up to new_region() to decide the actual capacity to allocate
-Arena_Region *new_region(size_t capacity)
+Region *new_region(size_t capacity)
 {
-    size_t size_bytes = sizeof(Arena_Region) + sizeof(uintptr_t)*capacity;
+    size_t size_bytes = sizeof(Region) + sizeof(uintptr_t)*capacity;
     // TODO: it would be nice if we could guarantee that the regions are allocated by ARENA_BACKEND_LIBC_MALLOC are page aligned
-    Arena_Region *r = (Arena_Region*)malloc(size_bytes);
+    Region *r = (Region*)malloc(size_bytes);
     ARENA_ASSERT(r);
     r->next = NULL;
     r->count = 0;
@@ -121,7 +121,7 @@ Arena_Region *new_region(size_t capacity)
     return r;
 }
 
-void free_region(Arena_Region *r)
+void free_region(Region *r)
 {
     free(r);
 }
@@ -129,10 +129,10 @@ void free_region(Arena_Region *r)
 #include <unistd.h>
 #include <sys/mman.h>
 
-Arena_Region *new_region(size_t capacity)
+Region *new_region(size_t capacity)
 {
-    size_t size_bytes = sizeof(Arena_Region) + sizeof(uintptr_t) * capacity;
-    Arena_Region *r = mmap(NULL, size_bytes, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+    size_t size_bytes = sizeof(Region) + sizeof(uintptr_t) * capacity;
+    Region *r = mmap(NULL, size_bytes, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
     ARENA_ASSERT(r != MAP_FAILED);
     r->next = NULL;
     r->count = 0;
@@ -140,9 +140,9 @@ Arena_Region *new_region(size_t capacity)
     return r;
 }
 
-void free_region(Arena_Region *r)
+void free_region(Region *r)
 {
-    size_t size_bytes = sizeof(Arena_Region) + sizeof(uintptr_t) * r->capacity;
+    size_t size_bytes = sizeof(Region) + sizeof(uintptr_t) * r->capacity;
     int ret = munmap(r, size_bytes);
     ARENA_ASSERT(ret == 0);
 }
@@ -158,10 +158,10 @@ void free_region(Arena_Region *r)
 
 #define INV_HANDLE(x)       (((x) == NULL) || ((x) == INVALID_HANDLE_VALUE))
 
-Arena_Region *new_region(size_t capacity)
+Region *new_region(size_t capacity)
 {
-    SIZE_T size_bytes = sizeof(Arena_Region) + sizeof(uintptr_t) * capacity;
-    Arena_Region *r = VirtualAllocEx(
+    SIZE_T size_bytes = sizeof(Region) + sizeof(uintptr_t) * capacity;
+    Region *r = VirtualAllocEx(
         GetCurrentProcess(),      /* Allocate in current process address space */
         NULL,                     /* Unknown position */
         size_bytes,               /* Bytes to allocate */
@@ -177,7 +177,7 @@ Arena_Region *new_region(size_t capacity)
     return r;
 }
 
-void free_region(Arena_Region *r)
+void free_region(Region *r)
 {
     if (INV_HANDLE(r))
         return;
@@ -280,7 +280,7 @@ char *arena_sprintf(Arena *a, const char *format, ...)
 
 void arena_reset(Arena *a)
 {
-    for (Arena_Region *r = a->begin; r != NULL; r = r->next) {
+    for (Region *r = a->begin; r != NULL; r = r->next) {
         r->count = 0;
     }
 
@@ -289,9 +289,9 @@ void arena_reset(Arena *a)
 
 void arena_free(Arena *a)
 {
-    Arena_Region *r = a->begin;
+    Region *r = a->begin;
     while (r) {
-        Arena_Region *r0 = r;
+        Region *r0 = r;
         r = r->next;
         free_region(r0);
     }
