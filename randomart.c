@@ -190,7 +190,7 @@ void node_print(Node *node)
         printf("%s", node->as.boolean ? "true" : "false");
         break;
     case NK_GT:
-        printf("mult(");
+        printf("gt(");
         node_print(node->as.binop.lhs);
         printf(", ");
         node_print(node->as.binop.rhs);
