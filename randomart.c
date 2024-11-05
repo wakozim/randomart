@@ -439,14 +439,15 @@ Node *gen_node(Grammar grammar, Arena *arena, Node *node, int depth)
     case NK_ADD:
     case NK_MULT:
     case NK_MOD:
-    case NK_GT:
+    case NK_GT: {
         Node *lhs = gen_node(grammar, arena, node->as.binop.lhs, depth);
         if (!lhs) return NULL;
         Node *rhs = gen_node(grammar, arena, node->as.binop.rhs, depth);
         if (!rhs) return NULL;
         return node_binop_loc(node->file, node->line, arena, node->kind, lhs, rhs);
+    }
 
-    case NK_TRIPLE:
+    case NK_TRIPLE: {
         Node *first  = gen_node(grammar, arena, node->as.triple.first, depth);
         if (!first) return NULL;
         Node *second = gen_node(grammar, arena, node->as.triple.second, depth);
@@ -454,7 +455,8 @@ Node *gen_node(Grammar grammar, Arena *arena, Node *node, int depth)
         Node *third  = gen_node(grammar, arena, node->as.triple.third, depth);
         if (!third) return NULL;
         return node_triple_loc(node->file, node->line, arena, first, second, third);
-    case NK_IF:
+    }
+    case NK_IF: {
         Node *cond = gen_node(grammar, arena, node->as.iff.cond, depth);
         if (!cond) return NULL;
         Node *then = gen_node(grammar, arena, node->as.iff.then, depth);
@@ -462,6 +464,7 @@ Node *gen_node(Grammar grammar, Arena *arena, Node *node, int depth)
         Node *elze = gen_node(grammar, arena, node->as.iff.elze, depth);
         if (!elze) return NULL;
         return node_if_loc(node->file, node->line, arena, cond, then, elze);
+    }
 
     case NK_RULE:
         return gen_rule(grammar, arena, node->as.rule, depth - 1);
