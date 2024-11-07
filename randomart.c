@@ -29,11 +29,12 @@ typedef enum {
     NK_GT,
     NK_TRIPLE,
     NK_IF,
+    NK_SIGM,
 
     COUNT_NK,
 } Node_Kind;
 
-static_assert(COUNT_NK == 13, "Amount of nodes have changed");
+static_assert(COUNT_NK == 14, "Amount of nodes have changed");
 const char *nk_names[COUNT_NK] = {
     [NK_X]       = "x",
     [NK_Y]       = "y",
@@ -48,6 +49,7 @@ const char *nk_names[COUNT_NK] = {
     [NK_GT]      = "gt",
     [NK_TRIPLE]  = "triple",
     [NK_IF]      = "if",
+    [NK_SIGM]    = "sigm",
 };
 
 typedef struct Node Node;
@@ -139,6 +141,7 @@ Node *node_boolean_loc(const char *file, int line, Arena *arena, bool boolean)
 #define node_random(arena) node_loc(__FILE__, __LINE__, arena, NK_RANDOM)
 
 #define node_sqrt(arena, unary)  node_unary_loc(__FILE__, __LINE__, arena, NK_SQRT, unary)
+#define node_sigm(arena, unary)  node_unary_loc(__FILE__, __LINE__, arena, NK_SIGM, unary)
 
 #define node_add(arena, lhs, rhs)  node_binop_loc(__FILE__, __LINE__, arena, NK_ADD, lhs, rhs)
 #define node_mult(arena, lhs, rhs) node_binop_loc(__FILE__, __LINE__, arena, NK_MULT, lhs, rhs)
@@ -230,6 +233,11 @@ void node_print(Node *node)
         node_print(node->as.unary);
         printf(")");
         break;
+    case NK_SIGM:
+        printf("sigm(");
+        node_print(node->as.unary);
+        printf(")");
+        break;
     case NK_RULE:
         printf("rule(%d)", node->as.rule);
         break;
@@ -315,6 +323,12 @@ Node *eval(Node *expr, Arena *arena, float x, float y)
         if (!rhs) return NULL;
         if (!expect_number(rhs)) return NULL;
         return node_number_loc(expr->file, expr->line, arena, sqrtf(rhs->as.number));
+    }
+    case NK_SIGM: {
+        Node *unary = eval(expr->as.unary, arena, x, y);
+        if (!unary) return NULL;
+        if (!expect_number(unary)) return NULL;
+        return node_number_loc(expr->file, expr->line, arena, tanhf(unary->as.number));
     }
     case NK_ADD: {
         Node *lhs = eval(expr->as.binop.lhs, arena, x, y);
@@ -464,6 +478,11 @@ Node *gen_node(Grammar grammar, Arena *arena, Node *node, int depth)
         if (!rhs) return NULL;
         return node_unary_loc(node->file, node->line, arena, node->kind, rhs);
     }
+    case NK_SIGM: {
+        Node *unary = gen_node(grammar, arena, node->as.unary, depth);
+        if (!unary) return NULL;
+        return node_unary_loc(node->file, node->line, arena, node->kind, unary);
+    }
 
     case NK_ADD:
     case NK_MULT:
@@ -475,7 +494,6 @@ Node *gen_node(Grammar grammar, Arena *arena, Node *node, int depth)
         if (!rhs) return NULL;
         return node_binop_loc(node->file, node->line, arena, node->kind, lhs, rhs);
     }
-
     case NK_TRIPLE: {
         Node *first  = gen_node(grammar, arena, node->as.triple.first, depth);
         if (!first) return NULL;
