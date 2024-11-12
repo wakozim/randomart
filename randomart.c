@@ -542,8 +542,6 @@ Node *gen_rule(Grammar grammar, size_t rule, int depth)
     return node;
 }
 
-size_t arch[] = {2, 28, 28, 9, 3};
-
 int main()
 {
     srand(time(0));
