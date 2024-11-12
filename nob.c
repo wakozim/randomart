@@ -2,17 +2,43 @@
 #define NOB_STRIP_PREFIX
 #include "nob.h"
 
+// Folders must end with forward slash /
+#define BUILD_FOLDER "build/"
+
+// TODO: redefine for your platform
+#define builder_cc(cmd) cmd_append(cmd, "cc")
+#define builder_flags(cmd) cmd_append(cmd, "-Wall", "-Wextra", "-Wswitch-enum", "-ggdb")
+#define builder_output(cmd, output_path) cmd_append(cmd, "-o", output_path)
+#define builder_inputs(cmd, ...) cmd_append(cmd, __VA_ARGS__)
+#define builder_libs(cmd) cmd_append(cmd, "-lm")
+
 int main(int argc, char **argv)
 {
     NOB_GO_REBUILD_URSELF(argc, argv);
 
     Cmd cmd = {0};
+    const char *program_name = shift(argv, argc);
 
-    cmd_append(&cmd, "cc", "-Wall", "-Wextra", "-Wswitch-enum", "-ggdb", "-o", "randomart", "randomart.c", "-lm");
+    if (!mkdir_if_not_exists(BUILD_FOLDER)) return 1;
+
+    builder_cc(&cmd);
+    builder_flags(&cmd);
+    builder_inputs(&cmd, "randomart.c");
+    builder_output(&cmd, BUILD_FOLDER "randomart");
+    builder_libs(&cmd);
     if (!cmd_run_sync_and_reset(&cmd)) return 1;
 
-    cmd_append(&cmd, "./randomart");
-    if (!cmd_run_sync_and_reset(&cmd)) return 1;
+    if (argc > 0) {
+        const char *command_name = shift(argv, argc);
+        if (strcmp(command_name, "run") == 0) {
+            cmd_append(&cmd, BUILD_FOLDER "randomart");
+            da_append_many(&cmd, argv, argc);
+            if (!cmd_run_sync_and_reset(&cmd)) return 1;
+        } else {
+            nob_log(ERROR, "Unknown command %s", command_name);
+            return 1;
+        }
+    }
 
     return 0;
 }
