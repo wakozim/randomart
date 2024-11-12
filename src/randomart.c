@@ -9,7 +9,6 @@
 #define NOB_IMPLEMENTATION
 #define NOB_STRIP_PREFIX
 #include "nob.h"
-#include "stb_image_write.h"
 #define ARENA_IMPLEMENTATION
 #include "arena.h"
 
