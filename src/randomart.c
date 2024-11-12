@@ -708,6 +708,8 @@ int main(int argc, char **argv)
 
     const char *program_name = shift(argv, argc);
 
+    int depth = 30;
+
     if (argc <= 0) {
         nob_log(ERROR, "Usage: %s <command>", program_name);
         nob_log(ERROR, "No command is provided");
@@ -727,7 +729,7 @@ int main(int argc, char **argv)
         Grammar grammar = {0};
         int entry = default_grammar(&grammar);
 
-        Node *f = gen_rule(grammar, entry, 30);
+        Node *f = gen_rule(grammar, entry, depth);
         if (!f) {
             nob_log(ERROR, "The crappy generation process could not terminate");
             return 1;
@@ -746,7 +748,7 @@ int main(int argc, char **argv)
         Grammar grammar = {0};
         int entry = default_grammar(&grammar);
 
-        Node *f = gen_rule(grammar, entry, 40);
+        Node *f = gen_rule(grammar, entry, depth);
         if (!f) {
             nob_log(ERROR, "The crappy generation process could not terminate");
             return 1;
