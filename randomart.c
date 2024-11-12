@@ -1,11 +1,14 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <time.h>
+#include <math.h>
+
+#include <raylib.h>
+#include <rlgl.h>
 
 #define NOB_IMPLEMENTATION
 #define NOB_STRIP_PREFIX
 #include "nob.h"
-#define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
 #define ARENA_IMPLEMENTATION
 #include "arena.h"
@@ -20,6 +23,7 @@ static Arena *context_arena = &static_arena;
 typedef enum {
     NK_X,
     NK_Y,
+    NK_T,
     NK_RANDOM,
     NK_RULE,
     NK_NUMBER,
@@ -35,10 +39,11 @@ typedef enum {
     COUNT_NK,
 } Node_Kind;
 
-static_assert(COUNT_NK == 13, "Amount of nodes have changed");
+static_assert(COUNT_NK == 14, "Amount of nodes have changed");
 const char *nk_names[COUNT_NK] = {
     [NK_X]       = "x",
     [NK_Y]       = "y",
+    [NK_T]       = "t",
     [NK_RULE]    = "rule",
     [NK_RANDOM]  = "random",
     [NK_NUMBER]  = "number",
@@ -75,7 +80,7 @@ typedef union {
     float number;
     bool boolean;
     Node_Binop binop;
-    Node *unary;
+    Node *unop;
     Node_Triple triple;
     Node_If iff;
     int rule;
@@ -97,10 +102,10 @@ Node *node_loc(const char *file, int line, Node_Kind kind)
     return node;
 }
 
-Node *node_unary_loc(const char *file, int line, Node_Kind kind, Node *unary)
+Node *node_unop_loc(const char *file, int line, Node_Kind kind, Node *unop)
 {
     Node *node = node_loc(file, line, kind);
-    node->as.unary = unary;
+    node->as.unop = unop;
     return node;
 }
 
@@ -138,9 +143,10 @@ Node *node_boolean_loc(const char *file, int line, bool boolean)
 
 #define node_x()      node_loc(__FILE__, __LINE__, NK_X)
 #define node_y()      node_loc(__FILE__, __LINE__, NK_Y)
+#define node_t()      node_loc(__FILE__, __LINE__, NK_T)
 #define node_random() node_loc(__FILE__, __LINE__, NK_RANDOM)
 
-#define node_sqrt(unary)  node_unary_loc(__FILE__, __LINE__, NK_SQRT, unary)
+#define node_sqrt(unop)  node_unop_loc(__FILE__, __LINE__, NK_SQRT, unop)
 
 #define node_add(lhs, rhs)  node_binop_loc(__FILE__, __LINE__, NK_ADD, lhs, rhs)
 #define node_mult(lhs, rhs) node_binop_loc(__FILE__, __LINE__, NK_MULT, lhs, rhs)
@@ -175,6 +181,9 @@ void node_print(Node *node)
         break;
     case NK_Y:
         printf("y");
+        break;
+    case NK_T:
+        printf("t");
         break;
     case NK_NUMBER:
         printf("%f", node->as.number);
@@ -229,7 +238,7 @@ void node_print(Node *node)
         break;
     case NK_SQRT:
         printf("sqrt(");
-        node_print(node->as.unary);
+        node_print(node->as.unop);
         printf(")");
         break;
     case NK_RULE:
@@ -243,34 +252,17 @@ void node_print(Node *node)
     }
 }
 
-typedef struct {
-    uint8_t r;
-    uint8_t g;
-    uint8_t b;
-    uint8_t a;
-} RGBA32;
-
-static RGBA32 pixels[WIDTH*HEIGHT];
-
-typedef struct {
-    float x, y;
-} Vector2;
-
-typedef struct {
-    float r, g, b;
-} Color;
-
-Color gray_gradient(float x, float y)
+Vector3 gray_gradient(float x, float y)
 {
     UNUSED(y);
-    return (Color) {x, x, x};
+    return (Vector3) {x, x, x};
 }
 
-Color cool(float x, float y)
+Vector3 cool(float x, float y)
 {
-    if (x*y >= 0) return (Color){x, y, 1};
+    if (x*y >= 0) return (Vector3){x, y, 1};
     float r = fmodf(x, y);
-    return (Color){r, r, r};
+    return (Vector3){r, r, r};
 }
 
 bool expect_number(Node *expr)
@@ -300,11 +292,12 @@ bool expect_triple(Node *expr)
     return true;
 }
 
-Node *eval(Node *expr, float x, float y)
+Node *eval(Node *expr, float x, float y, float t)
 {
     switch (expr->kind) {
     case NK_X:      return node_number_loc(expr->file, expr->line, x);
     case NK_Y:      return node_number_loc(expr->file, expr->line, y);
+    case NK_T:      return node_number_loc(expr->file, expr->line, t);
     case NK_BOOLEAN:
     case NK_NUMBER: return expr;
     case NK_RANDOM:
@@ -313,63 +306,63 @@ Node *eval(Node *expr, float x, float y)
         return NULL;
     }
     case NK_SQRT: {
-        Node *rhs = eval(expr->as.unary, x, y);
+        Node *rhs = eval(expr->as.unop, x, y, t);
         if (!rhs) return NULL;
         if (!expect_number(rhs)) return NULL;
         return node_number_loc(expr->file, expr->line, sqrtf(rhs->as.number));
     }
     case NK_ADD: {
-        Node *lhs = eval(expr->as.binop.lhs, x, y);
+        Node *lhs = eval(expr->as.binop.lhs, x, y, t);
         if (!lhs) return NULL;
         if (!expect_number(lhs)) return NULL;
-        Node *rhs = eval(expr->as.binop.rhs, x, y);
+        Node *rhs = eval(expr->as.binop.rhs, x, y, t);
         if (!rhs) return NULL;
         if (!expect_number(rhs)) return NULL;
         return node_number_loc(expr->file, expr->line, lhs->as.number + rhs->as.number);
     }
     case NK_MULT: {
-        Node *lhs = eval(expr->as.binop.lhs, x, y);
+        Node *lhs = eval(expr->as.binop.lhs, x, y, t);
         if (!lhs) return NULL;
         if (!expect_number(lhs)) return NULL;
-        Node *rhs = eval(expr->as.binop.rhs, x, y);
+        Node *rhs = eval(expr->as.binop.rhs, x, y, t);
         if (!rhs) return NULL;
         if (!expect_number(rhs)) return NULL;
         return node_number_loc(expr->file, expr->line, lhs->as.number * rhs->as.number);
     }
     case NK_MOD: {
-        Node *lhs = eval(expr->as.binop.lhs, x, y);
+        Node *lhs = eval(expr->as.binop.lhs, x, y, t);
         if (!lhs) return NULL;
         if (!expect_number(lhs)) return NULL;
-        Node *rhs = eval(expr->as.binop.rhs, x, y);
+        Node *rhs = eval(expr->as.binop.rhs, x, y, t);
         if (!rhs) return NULL;
         if (!expect_number(rhs)) return NULL;
         return node_number_loc(expr->file, expr->line, fmodf(lhs->as.number, rhs->as.number));
     }
     case NK_GT: {
-        Node *lhs = eval(expr->as.binop.lhs, x, y);
+        Node *lhs = eval(expr->as.binop.lhs, x, y, t);
         if (!lhs) return NULL;
         if (!expect_number(lhs)) return NULL;
-        Node *rhs = eval(expr->as.binop.rhs, x, y);
+        Node *rhs = eval(expr->as.binop.rhs, x, y, t);
         if (!rhs) return NULL;
         if (!expect_number(rhs)) return NULL;
         return node_boolean_loc(expr->file, expr->line, lhs->as.number > rhs->as.number);
     }
     case NK_TRIPLE: {
-        Node *first = eval(expr->as.triple.first, x, y);
+        Node *first = eval(expr->as.triple.first, x, y, t);
         if (!first) return NULL;
-        Node *second = eval(expr->as.triple.second, x, y);
+        Node *second = eval(expr->as.triple.second, x, y, t);
         if (!second) return NULL;
-        Node *third = eval(expr->as.triple.third, x, y);
+        Node *third = eval(expr->as.triple.third, x, y, t);
         if (!third) return NULL;
         return node_triple_loc(expr->file, expr->line, first, second, third);
     }
     case NK_IF: {
-        Node *cond = eval(expr->as.iff.cond, x, y);
+        Node *cond = eval(expr->as.iff.cond, x, y, t);
         if (!cond) return NULL;
         if (!expect_boolean(cond)) return NULL;
-        Node *then = eval(expr->as.iff.then, x, y);
+        Node *then = eval(expr->as.iff.then, x, y, t);
         if (!then) return NULL;
-        Node *elze = eval(expr->as.iff.elze, x, y);
+        Node *elze = eval(expr->as.iff.elze, x, y, t);
         if (!elze) return NULL;
         return cond->as.boolean ? then : elze;
     }
@@ -378,22 +371,23 @@ Node *eval(Node *expr, float x, float y)
     }
 }
 
-bool eval_func(Node *f, float x, float y, Color *c)
+bool eval_func(Node *f, float x, float y, float t, Vector3 *c)
 {
-    Node *result = eval(f, x, y);
+    Node *result = eval(f, x, y, t);
     if (!result) return false;
     if (!expect_triple(result)) return false;
     if (!expect_number(result->as.triple.first)) return false;
     if (!expect_number(result->as.triple.second)) return false;
     if (!expect_number(result->as.triple.third)) return false;
-    c->r = result->as.triple.first->as.number;
-    c->g = result->as.triple.second->as.number;
-    c->b = result->as.triple.third->as.number;
+    c->x = result->as.triple.first->as.number;
+    c->y = result->as.triple.second->as.number;
+    c->z = result->as.triple.third->as.number;
     return true;
 }
 
-bool render_pixels(Node *f)
+bool render_pixels(Image image, Node *f)
 {
+    Color *pixels = image.data;
     bool result = true;
     Arena temp_arena = {0};
     Arena *saved_arena = context_arena;
@@ -402,13 +396,13 @@ bool render_pixels(Node *f)
         float ny = (float)y/HEIGHT*2.0f - 1;
         for (size_t x = 0; x < WIDTH; ++x) {
             float nx = (float)x/WIDTH*2.0f - 1;
-            Color c;
-            if (!eval_func(f, nx, ny, &c)) return_defer(false);
+            Vector3 c;
+            if (!eval_func(f, nx, ny, 0.0, &c)) return_defer(false);
             arena_reset(&temp_arena);
             size_t index = y*WIDTH + x;
-            pixels[index].r = (c.r + 1)/2*255;
-            pixels[index].g = (c.g + 1)/2*255;
-            pixels[index].b = (c.b + 1)/2*255;
+            pixels[index].r = (c.x + 1)/2*255;
+            pixels[index].g = (c.y + 1)/2*255;
+            pixels[index].b = (c.z + 1)/2*255;
             pixels[index].a = 255;
         }
     }
@@ -463,14 +457,15 @@ Node *gen_node(Grammar grammar, Node *node, int depth)
     switch (node->kind) {
     case NK_X:
     case NK_Y:
+    case NK_T:
     case NK_NUMBER:
     case NK_BOOLEAN:
         return node;
 
     case NK_SQRT: {
-        Node *rhs = gen_node(grammar, node->as.unary, depth);
+        Node *rhs = gen_node(grammar, node->as.unop, depth);
         if (!rhs) return NULL;
-        return node_unary_loc(node->file, node->line, node->kind, rhs);
+        return node_unop_loc(node->file, node->line, node->kind, rhs);
     }
 
     case NK_ADD:
@@ -542,10 +537,8 @@ Node *gen_rule(Grammar grammar, size_t rule, int depth)
     return node;
 }
 
-int main()
+int default_grammar(Grammar *grammar)
 {
-    srand(time(0));
-    Grammar grammar = {0};
     Grammar_Branches branches = {0};
     int e = 0;
     int a = 1;
@@ -555,22 +548,33 @@ int main()
         .node = node_triple(node_rule(c), node_rule(c), node_rule(c)),
         .probability = 1.0f
     }));
-    context_da_append(&grammar, branches);
+    context_da_append(grammar, branches);
     memset(&branches, 0, sizeof(branches));
 
     context_da_append(&branches, ((Grammar_Branch) {
         .node = node_random(),
-        .probability = 1.0/3.0,
     }));
     context_da_append(&branches, ((Grammar_Branch) {
         .node = node_x(),
-        .probability = 1.0/3.0,
     }));
     context_da_append(&branches, ((Grammar_Branch) {
         .node = node_y(),
-        .probability = 1.0/3.0,
     }));
-    context_da_append(&grammar, branches);
+    context_da_append(&branches, ((Grammar_Branch) {
+        .node = node_t(),
+    }));
+    context_da_append(&branches, ((Grammar_Branch) {
+        .node = node_sqrt(
+            node_add(
+            node_add(node_mult(node_x(), node_x()),
+                     node_mult(node_y(), node_y())),
+                     node_mult(node_t(), node_t()))),
+    }));
+    for (size_t i = 0; i < branches.count; ++i) {
+        branches.items[i].probability = 1.0/branches.count;
+    }
+
+    context_da_append(grammar, branches);
     memset(&branches, 0, sizeof(branches));
 
     context_da_append(&branches, ((Grammar_Branch) {
@@ -588,37 +592,199 @@ int main()
         .probability = 3.f/8.f,
         // .probability = 1.f/4.f,
     }));
-    context_da_append(&grammar, branches);
+    context_da_append(grammar, branches);
     memset(&branches, 0, sizeof(branches));
+    return e;
+}
 
-    Node *f = gen_rule(grammar, e, 30);
-    if (!f) {
-        fprintf(stderr, "ERROR: the crappy generation process could not terminate\n");
+bool compile_node_into_fragment_expression(String_Builder *sb, Node *expr, size_t level)
+{
+    switch (expr->kind) {
+    case NK_X: sb_append_cstr(sb, "x"); break;
+    case NK_Y: sb_append_cstr(sb, "y"); break;
+    case NK_T: sb_append_cstr(sb, "t"); break;
+
+    case NK_RULE:
+    case NK_RANDOM:
+        printf("%s:%d: ERROR: cannot compile a node that valid only for grammar definitions\n", expr->file, expr->line);
+        return false;
+
+    case NK_NUMBER: {
+        size_t checkpoint = nob_temp_save();
+        sb_append_cstr(sb, temp_sprintf("%f", expr->as.number));
+        nob_temp_rewind(checkpoint);
+    } break;
+
+    case NK_BOOLEAN:
+        sb_append_cstr(sb, expr->as.boolean ? "true" : "false");
+        break;
+
+    case NK_SQRT:
+        sb_append_cstr(sb, "sqrt(");
+        if (!compile_node_into_fragment_expression(sb, expr->as.unop, level + 1)) return false;
+        sb_append_cstr(sb, ")");
+        break;
+
+    case NK_ADD:
+        sb_append_cstr(sb, "(");
+        if (!compile_node_into_fragment_expression(sb, expr->as.binop.lhs, level + 1)) return false;
+        sb_append_cstr(sb, "+");
+        if (!compile_node_into_fragment_expression(sb, expr->as.binop.rhs, level + 1)) return false;
+        sb_append_cstr(sb, ")");
+        break;
+
+    case NK_MULT:
+        sb_append_cstr(sb, "(");
+        if (!compile_node_into_fragment_expression(sb, expr->as.binop.lhs, level + 1)) return false;
+        sb_append_cstr(sb, "*");
+        if (!compile_node_into_fragment_expression(sb, expr->as.binop.rhs, level + 1)) return false;
+        sb_append_cstr(sb, ")");
+        break;
+    case NK_MOD:
+        sb_append_cstr(sb, "mod(");
+        if (!compile_node_into_fragment_expression(sb, expr->as.binop.lhs, level + 1)) return false;
+        sb_append_cstr(sb, ",");
+        if (!compile_node_into_fragment_expression(sb, expr->as.binop.rhs, level + 1)) return false;
+        sb_append_cstr(sb, ")");
+        break;
+    case NK_GT:
+        sb_append_cstr(sb, "(");
+        if (!compile_node_into_fragment_expression(sb, expr->as.binop.lhs, level + 1)) return false;
+        sb_append_cstr(sb, ">");
+        if (!compile_node_into_fragment_expression(sb, expr->as.binop.rhs, level + 1)) return false;
+        sb_append_cstr(sb, ")");
+        break;
+
+    case NK_TRIPLE:
+        sb_append_cstr(sb, "vec3(");
+        if (!compile_node_into_fragment_expression(sb, expr->as.triple.first, level + 1)) return false;
+        sb_append_cstr(sb, ",");
+        if (!compile_node_into_fragment_expression(sb, expr->as.triple.second, level + 1)) return false;
+        sb_append_cstr(sb, ",");
+        if (!compile_node_into_fragment_expression(sb, expr->as.triple.third, level + 1)) return false;
+        sb_append_cstr(sb, ")");
+        break;
+
+    case NK_IF:
+        sb_append_cstr(sb, "(");
+        if (!compile_node_into_fragment_expression(sb, expr->as.iff.cond, level + 1)) return false;
+        sb_append_cstr(sb, "?");
+        if (!compile_node_into_fragment_expression(sb, expr->as.iff.then, level + 1)) return false;
+        sb_append_cstr(sb, ":");
+        if (!compile_node_into_fragment_expression(sb, expr->as.iff.elze, level + 1)) return false;
+        sb_append_cstr(sb, ")");
+        break;
+
+    case COUNT_NK:
+    default:
+        UNREACHABLE("compile_node_into_fragment_expression");
+    }
+    return true;
+}
+
+bool compile_node_func_into_fragment_shader(String_Builder *sb, Node *f)
+{
+    sb_append_cstr(sb, "#version 330\n");
+    sb_append_cstr(sb, "in vec2 fragTexCoord;\n");
+    sb_append_cstr(sb, "out vec4 finalColor;\n");
+    sb_append_cstr(sb, "uniform float time;\n");
+    sb_append_cstr(sb, "vec4 map_color(vec3 rgb) {\n");
+    sb_append_cstr(sb, "    return vec4((rgb + 1)/2.0, 1.0);\n");
+    sb_append_cstr(sb, "}\n");
+    sb_append_cstr(sb, "void main()\n");
+    sb_append_cstr(sb, "{\n");
+    sb_append_cstr(sb, "    float x = fragTexCoord.x*2.0 - 1.0;\n");
+    sb_append_cstr(sb, "    float y = fragTexCoord.y*2.0 - 1.0;\n");
+    sb_append_cstr(sb, "    float t = sin(time);\n");
+    sb_append_cstr(sb, "    finalColor = map_color(");
+    if (!compile_node_into_fragment_expression(sb, f, 0)) return false;
+    sb_append_cstr(sb, ");\n");
+    sb_append_cstr(sb, "}\n");
+    return true;
+}
+
+int main(int argc, char **argv)
+{
+    srand(time(0));
+
+    const char *program_name = shift(argv, argc);
+
+    if (argc <= 0) {
+        nob_log(ERROR, "Usage: %s <command>", program_name);
+        nob_log(ERROR, "No command is provided");
         return 1;
     }
-    node_print_ln(f);
 
-    // bool ok = render_pixels(node_triple(node_x(), node_x(), node_x()));
-    // bool ok = render_pixels(
-    //     node_if(
-    //         node_gt(node_mult(node_x(), node_y()), node_number(0)),
-    //         node_triple(
-    //             node_x(),
-    //             node_y(),
-    //             node_number(1)),
-    //         node_triple(
-    //             node_mod(node_x(), node_y()),
-    //             node_mod(node_x(), node_y()),
-    //             node_mod(node_x(), node_y()))));
+    const char *command_name = shift(argv, argc);
 
-    bool ok = render_pixels(f);
+    if (strcmp(command_name, "file") == 0) {
+        if (argc <= 0) {
+            nob_log(ERROR, "Usage: %s %s <output-path>", program_name, command_name);
+            nob_log(ERROR, "No output path is provided");
+            return 1;
+        }
+        const char *output_path = shift(argv, argc);
 
-    if (!ok) return 1;
-    const char *output_path = "output.png";
-    if (!stbi_write_png(output_path, WIDTH, HEIGHT, 4, pixels, WIDTH*sizeof(RGBA32))) {
-        nob_log(ERROR, "Could not save image %s", output_path);
-        return 1;
+        Grammar grammar = {0};
+        int entry = default_grammar(&grammar);
+
+        Node *f = gen_rule(grammar, entry, 30);
+        if (!f) {
+            nob_log(ERROR, "The crappy generation process could not terminate");
+            return 1;
+        }
+        node_print_ln(f);
+
+        Image image = GenImageColor(WIDTH, HEIGHT, BLANK);
+        if (!render_pixels(image, f)) return 1;
+        if (!ExportImage(image, output_path)) return 1;
+
+        return 0;
     }
-    nob_log(INFO, "Generated %s", output_path);
-    return 0;
+
+    if (strcmp(command_name, "gui") == 0) {
+        InitWindow(800, 600, "RandomArt");
+        Grammar grammar = {0};
+        int entry = default_grammar(&grammar);
+
+        Node *f = gen_rule(grammar, entry, 40);
+        if (!f) {
+            nob_log(ERROR, "The crappy generation process could not terminate");
+            return 1;
+        }
+
+        String_Builder sb = {0};
+        if (!compile_node_func_into_fragment_shader(&sb, f)) return 1;
+        sb_append_null(&sb);
+
+        Shader shader = LoadShaderFromMemory(NULL, sb.items);
+        int time_loc = GetShaderLocation(shader, "time");
+        SetTargetFPS(60);
+        Texture default_texture = {
+            .id = rlGetTextureIdDefault(),
+            .width = 1,
+            .height = 1,
+            .mipmaps = 1,
+            .format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8,
+        };
+        while (!WindowShouldClose()) {
+            BeginDrawing();
+            float time = GetTime();
+            SetShaderValue(shader, time_loc, &time, SHADER_UNIFORM_FLOAT);
+            BeginShaderMode(shader);
+                DrawTexturePro(
+                    default_texture,
+                    (Rectangle){0, 0, 1, 1},
+                    (Rectangle){0, 0, GetScreenWidth(), GetScreenHeight()},
+                    (Vector2){0}, 0, WHITE);
+                // DrawTextureEx(default_texture, (Vector2){0, 0}, 0, size, WHITE);
+            EndShaderMode();
+            EndDrawing();
+        }
+        CloseWindow();
+        return 0;
+    }
+
+    nob_log(ERROR, "Unknown command %s", command_name);
+    return 1;
 }

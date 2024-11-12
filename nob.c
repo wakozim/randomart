@@ -6,11 +6,20 @@
 #define BUILD_FOLDER "build/"
 
 // TODO: redefine for your platform
-#define builder_cc(cmd) cmd_append(cmd, "cc")
-#define builder_flags(cmd) cmd_append(cmd, "-Wall", "-Wextra", "-Wswitch-enum", "-ggdb")
-#define builder_output(cmd, output_path) cmd_append(cmd, "-o", output_path)
-#define builder_inputs(cmd, ...) cmd_append(cmd, __VA_ARGS__)
-#define builder_libs(cmd) cmd_append(cmd, "-lm")
+#define builder_cc(cmd) \
+    cmd_append(cmd, "cc")
+#define builder_flags(cmd) \
+    cmd_append(cmd, "-Wall", "-Wextra", "-Wswitch-enum", "-ggdb")
+#define builder_output(cmd, output_path) \
+    cmd_append(cmd, "-o", output_path)
+#define builder_inputs(cmd, ...) \
+    cmd_append(cmd, __VA_ARGS__)
+#define builder_raylib_include_path(cmd) \
+    cmd_append(cmd, "-I./raylib/raylib-5.0_linux_amd64/include")
+#define builder_raylib_lib(cmd) \
+    cmd_append(cmd, "-L./raylib/raylib-5.0_linux_amd64/lib/", "-l:libraylib.a")
+#define builder_libs(cmd) \
+    cmd_append(cmd, "-lm")
 
 int main(int argc, char **argv)
 {
@@ -23,8 +32,10 @@ int main(int argc, char **argv)
 
     builder_cc(&cmd);
     builder_flags(&cmd);
+    builder_raylib_include_path(&cmd);
     builder_inputs(&cmd, "randomart.c");
     builder_output(&cmd, BUILD_FOLDER "randomart");
+    builder_raylib_lib(&cmd);
     builder_libs(&cmd);
     if (!cmd_run_sync_and_reset(&cmd)) return 1;
 
