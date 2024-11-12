@@ -14,7 +14,7 @@
 #include "arena.h"
 
 #define WIDTH 800
-#define HEIGHT 800
+#define HEIGHT 600
 
 static Arena static_arena = {0};
 static Arena *context_arena = &static_arena;
@@ -743,7 +743,7 @@ int main(int argc, char **argv)
     }
 
     if (strcmp(command_name, "gui") == 0) {
-        InitWindow(800, 600, "RandomArt");
+        InitWindow(WIDTH, HEIGHT, "RandomArt");
         Grammar grammar = {0};
         int entry = default_grammar(&grammar);
 
