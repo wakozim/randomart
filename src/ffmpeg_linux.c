@@ -56,7 +56,7 @@ FFMPEG *ffmpeg_start_rendering(size_t width, size_t height, size_t fps)
             "-i", "-",
 
             "-c:v", "libx264",
-            "-vb", "2500k",
+            "-vb", "4500k",
             "-c:a", "aac",
             "-ab", "200k",
             "-pix_fmt", "yuv420p",

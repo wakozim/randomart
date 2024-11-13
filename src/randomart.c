@@ -538,6 +538,7 @@ Node *gen_rule(Grammar grammar, size_t rule, int depth)
     return node;
 }
 
+// TODO: load grammar from file
 int default_grammar(Grammar *grammar)
 {
     Grammar_Branches branches = {0};
@@ -683,6 +684,7 @@ bool compile_node_into_fragment_expression(String_Builder *sb, Node *expr, size_
     return true;
 }
 
+// TODO: typechecking during compilation
 bool compile_node_func_into_fragment_shader(String_Builder *sb, Node *f)
 {
     sb_append_cstr(sb, "#version 330\n");
