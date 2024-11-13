@@ -13,8 +13,8 @@
 #include "arena.h"
 #include "ffmpeg.h"
 
-#define WIDTH 800
-#define HEIGHT 600
+#define WIDTH 1600
+#define HEIGHT 900
 #define FPS 60
 
 static Arena static_arena = {0};
@@ -817,14 +817,27 @@ bool compile_node_func_into_fragment_shader(String_Builder *sb, Node *f)
 
 int main(int argc, char **argv)
 {
-    srand(time(0));
-
     const char *program_name = shift(argv, argc);
 
     int depth = 40;
+    int seed = time(0);
+
+    while (argc > 0) {
+        const char *flag = argv[0];
+        if (strcmp(flag, "-seed") == 0) {
+            UNUSED(shift(argv, argc));
+            if (argc <= 0) {
+                nob_log(ERROR, "No argument is provided for %s", flag);
+                return 1;
+            }
+            seed = atoi(shift(argv, argc));
+        } else {
+            break;
+        }
+    }
 
     if (argc <= 0) {
-        nob_log(ERROR, "Usage: %s <command>", program_name);
+        nob_log(ERROR, "Usage: [options] %s <command>", program_name);
         nob_log(ERROR, "No command is provided");
         return 1;
     }
@@ -839,15 +852,24 @@ int main(int argc, char **argv)
         }
         const char *output_path = shift(argv, argc);
 
+        if (argc > 0) {
+            nob_log(ERROR, "Usage: %s %s <output-path>", program_name, command_name);
+            nob_log(ERROR, "%s accepts only 1 argument", command_name);
+            return 1;
+        }
+
         Grammar grammar = {0};
         int entry = default_grammar(&grammar);
+
+        srand(seed);
+        nob_log(INFO, "SEED: %d", seed);
+        nob_log(INFO, "DEPTH: %d", depth);
 
         Node *f = gen_rule(grammar, entry, depth);
         if (!f) {
             nob_log(ERROR, "The crappy generation process could not terminate");
             return 1;
         }
-        node_print_ln(f);
 
         Image image = GenImageColor(WIDTH, HEIGHT, BLANK);
         if (!render_pixels(image, f)) return 1;
@@ -857,15 +879,23 @@ int main(int argc, char **argv)
     }
 
     if (strcmp(command_name, "gui") == 0) {
+        if (argc > 0) {
+            nob_log(ERROR, "%s does not accept any arguments", command_name);
+            return 1;
+        }
+
         Grammar grammar = {0};
         int entry = default_grammar(&grammar);
+
+        srand(seed);
+        nob_log(INFO, "SEED: %d", seed);
+        nob_log(INFO, "DEPTH: %d", depth);
 
         Node *f = gen_rule(grammar, entry, depth);
         if (!f) {
             nob_log(ERROR, "The crappy generation process could not terminate");
             return 1;
         }
-        node_print_ln(f);
 
         String_Builder sb = {0};
         if (!compile_node_func_into_fragment_shader(&sb, f)) return 1;
@@ -887,7 +917,8 @@ int main(int argc, char **argv)
             .format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8,
         };
         float time = 0.0f;
-        float max_render_length = 2*PI;
+        float max_render_length = (2*PI)*4;
+        bool pause = false;
         while (!WindowShouldClose()) {
             float w = GetScreenWidth();
             float h = GetScreenHeight();
@@ -902,12 +933,15 @@ int main(int argc, char **argv)
                             (Rectangle){0, 0, w, h},
                             (Vector2){0}, 0, WHITE);
                 EndShaderMode();
-                time += dt;
+                if (!pause) time += dt;
 
                 if (IsKeyPressed(KEY_R)) {
                     ffmpeg = ffmpeg_start_rendering(WIDTH, HEIGHT, FPS);
                     time = 0;
                     SetTraceLogLevel(LOG_WARNING);
+                }
+                if (IsKeyPressed(KEY_SPACE)) {
+                    pause = !pause;
                 }
             } else {
                 if (time < max_render_length) {
