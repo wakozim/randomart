@@ -708,8 +708,6 @@ bool compile_node_func_into_fragment_shader(String_Builder *sb, Node *f)
 
 int main(int argc, char **argv)
 {
-    srand(time(0));
-
     const char *program_name = shift(argv, argc);
 
     int depth = 40;
@@ -733,12 +731,15 @@ int main(int argc, char **argv)
         Grammar grammar = {0};
         int entry = default_grammar(&grammar);
 
+        int seed = time(0);
+        srand(seed);
+        nob_log(INFO, "SEED: %d\n", seed);
+
         Node *f = gen_rule(grammar, entry, depth);
         if (!f) {
             nob_log(ERROR, "The crappy generation process could not terminate");
             return 1;
         }
-        node_print_ln(f);
 
         Image image = GenImageColor(WIDTH, HEIGHT, BLANK);
         if (!render_pixels(image, f)) return 1;
@@ -751,12 +752,15 @@ int main(int argc, char **argv)
         Grammar grammar = {0};
         int entry = default_grammar(&grammar);
 
+        int seed = time(0);
+        srand(seed);
+        nob_log(INFO, "SEED: %d\n", seed);
+
         Node *f = gen_rule(grammar, entry, depth);
         if (!f) {
             nob_log(ERROR, "The crappy generation process could not terminate");
             return 1;
         }
-        node_print_ln(f);
 
         String_Builder sb = {0};
         if (!compile_node_func_into_fragment_shader(&sb, f)) return 1;
