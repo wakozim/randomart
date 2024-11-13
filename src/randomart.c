@@ -783,6 +783,7 @@ int main(int argc, char **argv)
         };
         float time = 0.0f;
         float max_render_length = 2*PI;
+        bool pause = false;
         while (!WindowShouldClose()) {
             float w = GetScreenWidth();
             float h = GetScreenHeight();
@@ -797,12 +798,15 @@ int main(int argc, char **argv)
                             (Rectangle){0, 0, w, h},
                             (Vector2){0}, 0, WHITE);
                 EndShaderMode();
-                time += dt;
+                if (!pause) time += dt;
 
                 if (IsKeyPressed(KEY_R)) {
                     ffmpeg = ffmpeg_start_rendering(WIDTH, HEIGHT, FPS);
                     time = 0;
                     SetTraceLogLevel(LOG_WARNING);
+                }
+                if (IsKeyPressed(KEY_SPACE)) {
+                    pause = !pause;
                 }
             } else {
                 if (time < max_render_length) {
