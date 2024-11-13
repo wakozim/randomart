@@ -30,6 +30,12 @@ typedef enum {
     NK_NUMBER,
     NK_BOOLEAN,
     NK_SQRT,
+    NK_SIN,
+    NK_COS,
+    NK_TAN,
+    NK_COT,
+    NK_LOG,
+    NK_ABS,
     NK_ADD,
     NK_MULT,
     NK_MOD,
@@ -40,7 +46,7 @@ typedef enum {
     COUNT_NK,
 } Node_Kind;
 
-static_assert(COUNT_NK == 14, "Amount of nodes have changed");
+static_assert(COUNT_NK == 20, "Amount of nodes have changed");
 const char *nk_names[COUNT_NK] = {
     [NK_X]       = "x",
     [NK_Y]       = "y",
@@ -49,6 +55,12 @@ const char *nk_names[COUNT_NK] = {
     [NK_RANDOM]  = "random",
     [NK_NUMBER]  = "number",
     [NK_SQRT]    = "sqrt",
+    [NK_SIN]     = "sin",
+    [NK_COS]     = "cos",
+    [NK_TAN]     = "tan",
+    [NK_COT]     = "cot",
+    [NK_LOG]     = "log",
+    [NK_ABS]     = "abs",
     [NK_ADD]     = "add",
     [NK_MULT]    = "mult",
     [NK_MOD]     = "mod",
@@ -148,6 +160,12 @@ Node *node_boolean_loc(const char *file, int line, bool boolean)
 #define node_random() node_loc(__FILE__, __LINE__, NK_RANDOM)
 
 #define node_sqrt(unop)  node_unop_loc(__FILE__, __LINE__, NK_SQRT, unop)
+#define node_sin(unop)   node_unop_loc(__FILE__, __LINE__, NK_SIN, unop)
+#define node_cos(unop)   node_unop_loc(__FILE__, __LINE__, NK_COS, unop)
+#define node_tan(unop)   node_unop_loc(__FILE__, __LINE__, NK_TAN, unop)
+#define node_cot(unop)   node_unop_loc(__FILE__, __LINE__, NK_COT, unop)
+#define node_log(unop)   node_unop_loc(__FILE__, __LINE__, NK_LOG, unop)
+#define node_abs(unop)   node_unop_loc(__FILE__, __LINE__, NK_ABS, unop)
 
 #define node_add(lhs, rhs)  node_binop_loc(__FILE__, __LINE__, NK_ADD, lhs, rhs)
 #define node_mult(lhs, rhs) node_binop_loc(__FILE__, __LINE__, NK_MULT, lhs, rhs)
@@ -238,7 +256,13 @@ void node_print(Node *node)
         node_print(node->as.iff.elze);
         break;
     case NK_SQRT:
-        printf("sqrt(");
+    case NK_SIN:
+    case NK_COS:
+    case NK_TAN:
+    case NK_COT:
+    case NK_LOG:
+    case NK_ABS:
+        printf("%s(", nk_names[node->kind]);
         node_print(node->as.unop);
         printf(")");
         break;
@@ -311,6 +335,42 @@ Node *eval(Node *expr, float x, float y, float t)
         if (!rhs) return NULL;
         if (!expect_number(rhs)) return NULL;
         return node_number_loc(expr->file, expr->line, sqrtf(rhs->as.number));
+    }
+    case NK_SIN: {
+        Node *rhs = eval(expr->as.unop, x, y, t);
+        if (!rhs) return NULL;
+        if (!expect_number(rhs)) return NULL;
+        return node_number_loc(expr->file, expr->line, sinf(rhs->as.number));
+    }
+    case NK_COS: {
+        Node *rhs = eval(expr->as.unop, x, y, t);
+        if (!rhs) return NULL;
+        if (!expect_number(rhs)) return NULL;
+        return node_number_loc(expr->file, expr->line, cosf(rhs->as.number));
+    }
+    case NK_TAN: {
+        Node *rhs = eval(expr->as.unop, x, y, t);
+        if (!rhs) return NULL;
+        if (!expect_number(rhs)) return NULL;
+        return node_number_loc(expr->file, expr->line, tanf(rhs->as.number));
+    }
+    case NK_COT: {
+        Node *rhs = eval(expr->as.unop, x, y, t);
+        if (!rhs) return NULL;
+        if (!expect_number(rhs)) return NULL;
+        return node_number_loc(expr->file, expr->line, 1.0f/tanf(rhs->as.number));
+    }
+    case NK_LOG: {
+        Node *rhs = eval(expr->as.unop, x, y, t);
+        if (!rhs) return NULL;
+        if (!expect_number(rhs)) return NULL;
+        return node_number_loc(expr->file, expr->line, logf(rhs->as.number));
+    }
+    case NK_ABS: {
+        Node *rhs = eval(expr->as.unop, x, y, t);
+        if (!rhs) return NULL;
+        if (!expect_number(rhs)) return NULL;
+        return node_number_loc(expr->file, expr->line, fabsf(rhs->as.number));
     }
     case NK_ADD: {
         Node *lhs = eval(expr->as.binop.lhs, x, y, t);
@@ -463,7 +523,13 @@ Node *gen_node(Grammar grammar, Node *node, int depth)
     case NK_BOOLEAN:
         return node;
 
-    case NK_SQRT: {
+    case NK_SQRT:
+    case NK_SIN:
+    case NK_COS:
+    case NK_TAN:
+    case NK_COT:
+    case NK_LOG:
+    case NK_ABS: {
         Node *rhs = gen_node(grammar, node->as.unop, depth);
         if (!rhs) return NULL;
         return node_unop_loc(node->file, node->line, node->kind, rhs);
@@ -572,6 +638,13 @@ int default_grammar(Grammar *grammar)
                      node_mult(node_y(), node_y())),
                      node_mult(node_t(), node_t()))),
     }));
+    context_da_append(&branches, ((Grammar_Branch) {
+        .node = node_log(node_abs(node_t())),
+    }));
+    context_da_append(&branches, ((Grammar_Branch) {
+        .node = node_sin(node_mult(node_x(), node_y())),
+    }));
+
     for (size_t i = 0; i < branches.count; ++i) {
         branches.items[i].probability = 1.0/branches.count;
     }
@@ -623,6 +696,42 @@ bool compile_node_into_fragment_expression(String_Builder *sb, Node *expr, size_
 
     case NK_SQRT:
         sb_append_cstr(sb, "sqrt(");
+        if (!compile_node_into_fragment_expression(sb, expr->as.unop, level + 1)) return false;
+        sb_append_cstr(sb, ")");
+        break;
+
+    case NK_SIN:
+        sb_append_cstr(sb, "sin(");
+        if (!compile_node_into_fragment_expression(sb, expr->as.unop, level + 1)) return false;
+        sb_append_cstr(sb, ")");
+        break;
+
+    case NK_COS:
+        sb_append_cstr(sb, "cos(");
+        if (!compile_node_into_fragment_expression(sb, expr->as.unop, level + 1)) return false;
+        sb_append_cstr(sb, ")");
+        break;
+
+    case NK_TAN:
+        sb_append_cstr(sb, "tan(");
+        if (!compile_node_into_fragment_expression(sb, expr->as.unop, level + 1)) return false;
+        sb_append_cstr(sb, ")");
+        break;
+
+    case NK_COT:
+        sb_append_cstr(sb, "(1.0/tan(");
+        if (!compile_node_into_fragment_expression(sb, expr->as.unop, level + 1)) return false;
+        sb_append_cstr(sb, "))");
+        break;
+
+    case NK_LOG:
+        sb_append_cstr(sb, "log(");
+        if (!compile_node_into_fragment_expression(sb, expr->as.unop, level + 1)) return false;
+        sb_append_cstr(sb, ")");
+        break;
+
+    case NK_ABS:
+        sb_append_cstr(sb, "abs(");
         if (!compile_node_into_fragment_expression(sb, expr->as.unop, level + 1)) return false;
         sb_append_cstr(sb, ")");
         break;
@@ -859,6 +968,7 @@ int main(int argc, char **argv)
             }
             EndDrawing();
         }
+        UnloadShader(shader);
         CloseWindow();
         return 0;
     }
