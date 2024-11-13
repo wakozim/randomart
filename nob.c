@@ -34,7 +34,7 @@ int main(int argc, char **argv)
     builder_cc(&cmd);
     builder_flags(&cmd);
     builder_raylib_include_path(&cmd);
-    builder_inputs(&cmd, SRC_FOLDER"randomart.c");
+    builder_inputs(&cmd, SRC_FOLDER"randomart.c", SRC_FOLDER"ffmpeg_linux.c");
     builder_output(&cmd, BUILD_FOLDER"randomart");
     builder_raylib_lib(&cmd);
     builder_libs(&cmd);

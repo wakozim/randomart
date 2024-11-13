@@ -11,9 +11,11 @@
 #include "nob.h"
 #define ARENA_IMPLEMENTATION
 #include "arena.h"
+#include "ffmpeg.h"
 
 #define WIDTH 800
 #define HEIGHT 600
+#define FPS 60
 
 static Arena static_arena = {0};
 static Arena *context_arena = &static_arena;
@@ -708,7 +710,7 @@ int main(int argc, char **argv)
 
     const char *program_name = shift(argv, argc);
 
-    int depth = 30;
+    int depth = 40;
 
     if (argc <= 0) {
         nob_log(ERROR, "Usage: %s <command>", program_name);
@@ -744,7 +746,6 @@ int main(int argc, char **argv)
     }
 
     if (strcmp(command_name, "gui") == 0) {
-        InitWindow(WIDTH, HEIGHT, "RandomArt");
         Grammar grammar = {0};
         int entry = default_grammar(&grammar);
 
@@ -753,14 +754,20 @@ int main(int argc, char **argv)
             nob_log(ERROR, "The crappy generation process could not terminate");
             return 1;
         }
+        node_print_ln(f);
 
         String_Builder sb = {0};
         if (!compile_node_func_into_fragment_shader(&sb, f)) return 1;
         sb_append_null(&sb);
 
+        FFMPEG *ffmpeg = NULL;
+
+        InitWindow(WIDTH, HEIGHT, "RandomArt");
+        RenderTexture2D screen = LoadRenderTexture(WIDTH, HEIGHT);
         Shader shader = LoadShaderFromMemory(NULL, sb.items);
         int time_loc = GetShaderLocation(shader, "time");
-        SetTargetFPS(60);
+        SetTargetFPS(FPS);
+        SetExitKey(KEY_NULL);
         Texture default_texture = {
             .id = rlGetTextureIdDefault(),
             .width = 1,
@@ -768,18 +775,86 @@ int main(int argc, char **argv)
             .mipmaps = 1,
             .format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8,
         };
+        float time = 0.0f;
+        float max_render_length = 2*PI;
         while (!WindowShouldClose()) {
+            float w = GetScreenWidth();
+            float h = GetScreenHeight();
+            float dt = GetFrameTime();
             BeginDrawing();
-            float time = GetTime();
-            SetShaderValue(shader, time_loc, &time, SHADER_UNIFORM_FLOAT);
-            BeginShaderMode(shader);
-                DrawTexturePro(
-                    default_texture,
-                    (Rectangle){0, 0, 1, 1},
-                    (Rectangle){0, 0, GetScreenWidth(), GetScreenHeight()},
-                    (Vector2){0}, 0, WHITE);
-                // DrawTextureEx(default_texture, (Vector2){0, 0}, 0, size, WHITE);
-            EndShaderMode();
+            if (ffmpeg == NULL) {
+                SetShaderValue(shader, time_loc, &time, SHADER_UNIFORM_FLOAT);
+                BeginShaderMode(shader);
+                    DrawTexturePro(
+                            default_texture,
+                            (Rectangle){0, 0, 1, 1},
+                            (Rectangle){0, 0, w, h},
+                            (Vector2){0}, 0, WHITE);
+                EndShaderMode();
+                time += dt;
+
+                if (IsKeyPressed(KEY_R)) {
+                    ffmpeg = ffmpeg_start_rendering(WIDTH, HEIGHT, FPS);
+                    time = 0;
+                    SetTraceLogLevel(LOG_WARNING);
+                }
+            } else {
+                if (time < max_render_length) {
+                    BeginTextureMode(screen);
+                        SetShaderValue(shader, time_loc, &time, SHADER_UNIFORM_FLOAT);
+                        BeginShaderMode(shader);
+                            DrawTexturePro(
+                                    default_texture,
+                                    (Rectangle){0, 0, 1, 1},
+                                    (Rectangle){0, 0, w, h},
+                                    (Vector2){0}, 0, WHITE);
+                        EndShaderMode();
+                    EndTextureMode();
+
+                    DrawTexture(screen.texture, 0, 0, WHITE);
+
+                    // Progress bar
+                    {
+                        Rectangle bar_frame = {0};
+                        bar_frame.width = w*.85f;
+                        bar_frame.height = h*.10f;
+                        bar_frame.x = w*.5f - bar_frame.width*.5f;
+                        bar_frame.y = h - bar_frame.height*2.f;
+
+                        float shadow_offset = 0.004f;
+
+                        Rectangle shadow_bar_frame = bar_frame;
+                        shadow_bar_frame.x -= w*shadow_offset;
+                        shadow_bar_frame.y += w*shadow_offset;
+
+                        Rectangle progress_bar = bar_frame;
+                        progress_bar.width *= time/max_render_length;
+
+                        float thick = w*.01f;
+                        DrawRectangleLinesEx(shadow_bar_frame, thick, BLACK);
+                        DrawRectangleRec(progress_bar, WHITE);
+                        DrawRectangleLinesEx(bar_frame, thick, WHITE);
+                    }
+
+                    Image image = LoadImageFromTexture(screen.texture);
+                    ffmpeg_send_frame_flipped(ffmpeg, image.data, WIDTH, HEIGHT);
+                    UnloadImage(image);
+
+                    time += 1.0f/FPS;
+
+                    if (IsKeyPressed(KEY_ESCAPE)) {
+                        time = 0;
+                        ffmpeg_end_rendering(ffmpeg);
+                        ffmpeg = NULL;
+                        SetTraceLogLevel(LOG_INFO);
+                    }
+                } else {
+                    time = 0;
+                    ffmpeg_end_rendering(ffmpeg);
+                    ffmpeg = NULL;
+                    SetTraceLogLevel(LOG_INFO);
+                }
+            }
             EndDrawing();
         }
         CloseWindow();
